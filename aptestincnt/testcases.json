@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Get post 1 from JSONPlaceholder",
+    "url": "https://jsonplaceholder.typicode.com/posts/1",
+    "schema_name": "post_schema_1",
+    "generate_schema": true,
+    "use_existing_schema": false,
+    "headers": null
+  },
+  {
+    "name": "Get user 2 from JSONPlaceholder",
+    "url": "https://jsonplaceholder.typicode.com/users/2",
+    "schema_name": "user_schema_2",
+    "generate_schema": true,
+    "use_existing_schema": false,
+    "headers": null 
+  }
+]
