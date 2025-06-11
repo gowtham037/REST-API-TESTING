@@ -40,7 +40,7 @@ COPY --chown=appuser:appgroup report.py /app/
 RUN echo "# Ready to run your Python API validator script" > validator.py
 
 # Change to non-root user
-USER appuser
+USER appuser 
 # Expose port for ttyd
 EXPOSE 8080
 
