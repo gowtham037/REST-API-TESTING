@@ -11,6 +11,17 @@ import hashlib
 SCHEMA_DIR = "schemas"
 os.makedirs(SCHEMA_DIR, exist_ok=True)
 
+ALLOWED_HEADERS = {
+    "accept",
+    "content-type",
+    "authorization",
+    "user-agent",
+    "cache-control",
+    "pragma",
+    "x-request-id",
+    "x-api-key"
+}
+
 def schema_filename(url, method):
     unique_id = hashlib.md5(f"{method}_{url}".encode()).hexdigest()
     return os.path.join(SCHEMA_DIR, f"{unique_id}_schema.json")
@@ -32,26 +43,25 @@ class ReportGenerator:
     def generate_html(self, filename="reports.html"):
         file_path = os.path.join(os.getcwd(), filename)
         with open(file_path, "w") as f:
-            f.write(f"""
+            f.write("""
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>API Testing Report</title>
     <style>
-        body {{ font-family: Arial, sans-serif; padding: 20px; }}
-        h1 {{ color: #2c3e50; }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-        th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
-        th {{ background-color: #f0f0f0; }} 
-        .pass {{ color: green; font-weight: bold; }}
-        .fail {{ color: red; font-weight: bold; }}
-        .skip {{ color: gray; font-weight: bold; }}
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        h1 { color: #2c3e50; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f0f0f0; } 
+        .pass { color: green; font-weight: bold; }
+        .fail { color: red; font-weight: bold; }
+        .skip { color: gray; font-weight: bold; }
     </style>
 </head>
 <body>
     <h1>API Testing Report</h1>
-    <p>Generated on: {str(datetime.datetime.now())}</p>
     <table>
         <tr>
             <th>Method</th>
@@ -94,6 +104,12 @@ class ReportGenerator:
 </html>""")
         print(f"\n📄 Report saved at: {file_path}")
 
+def validate_custom_headers(headers):
+    for key, val in headers.items():
+        if key.lower() not in ALLOWED_HEADERS or val.strip() == "":
+            return False
+    return True
+
 def get_response(url, method="GET", payload=None, custom_headers=None):
     headers = {
         "Accept": "application/json",
@@ -108,10 +124,15 @@ def get_response(url, method="GET", payload=None, custom_headers=None):
         if method == "POST":
             response = requests.post(url, json=payload, headers=headers)
         elif method == "PUT":
-            # Send PUT data as query parameters instead of JSON body
-            response = requests.put(url, params=payload, headers=headers)
+            response = requests.put(url, json=payload, headers=headers)
         elif method == "DELETE":
             response = requests.delete(url, headers=headers)
+        elif method == "PATCH":
+            response = requests.patch(url, json=payload, headers=headers)
+        elif method == "HEAD":
+            response = requests.head(url, headers=headers)
+        elif method == "OPTIONS":
+            response = requests.options(url, headers=headers)
         else:
             response = requests.get(url, headers=headers)
         elapsed = time.time() - start_time
@@ -120,30 +141,17 @@ def get_response(url, method="GET", payload=None, custom_headers=None):
         print(f"Request error: {e}")
         return None, 0
 
-def validate_payload(payload, expected_schema=None):
-    issues = []
-    if not expected_schema:
-        return issues
-    for key, expected_type in expected_schema.items():
-        if key not in payload:
-            issues.append(f"Missing field: {key}")
-        elif not isinstance(payload[key], expected_type):
-            issues.append(
-                f"Field '{key}' should be {expected_type.__name__}, got {type(payload[key]).__name__}")
-    return issues
-
 def validate_response(url, method, report, payload=None, expected_schema=None, custom_headers=None):
     issues = []
 
-    if method in ["POST", "PUT"] and payload:
-        payload_issues = validate_payload(payload, expected_schema)
-        if payload_issues:
-            report.add_entry(url, method, 0, False, payload_issues, 0)
-            return
+    if custom_headers and not validate_custom_headers(custom_headers):
+        issues.append("Invalid or disallowed headers provided.")
+        report.add_entry(url, method, 0, None, issues, 0)
+        return
 
     response, response_time = get_response(url, method, payload, custom_headers)
     if response is None:
-        report.add_entry(url, method, 0, False, ["No response received"], 0)
+        report.add_entry(url, method, 0, None, ["No response received"], 0)
         return
 
     status_code = response.status_code
@@ -152,11 +160,11 @@ def validate_response(url, method, report, payload=None, expected_schema=None, c
 
     if not (200 <= status_code < 300):
         reason = HTTPStatus(status_code).phrase if status_code in HTTPStatus._value2member_map_ else "Unknown"
-        try:
-            error_details = response.json()
-            issues.append(f"Unexpected status code: {status_code} {reason} - {error_details}")
-        except Exception:
-            issues.append(f"Unexpected status code: {status_code} {reason} - (No JSON body)")
+        issues.append(f"Unexpected status code: {status_code} {reason}")
+        report.add_entry(url, method, status_code, None, issues, response_time)
+        return
+
+    if method in ["HEAD", "OPTIONS"]:
         report.add_entry(url, method, status_code, None, issues, response_time)
         return
 
@@ -195,7 +203,7 @@ def validate_response(url, method, report, payload=None, expected_schema=None, c
     report.add_entry(url, method, status_code, schema_valid, issues, response_time)
 
 if __name__ == "__main__":
-    print("🔧 Multi-Method API Validation Tool")
+    print("🔍 Multi-Method API Validation Tool")
 
     try:
         num = int(input("🔢 Number of endpoints: "))
@@ -203,29 +211,22 @@ if __name__ == "__main__":
 
         for i in range(num):
             url = input(f"🌐 URL #{i + 1}: ").strip()
-            if not url.startswith("http"):
-                print("❌ Invalid URL")
-                continue
-
-            method = input("🔁 Method (GET/POST/PUT/DELETE): ").strip().upper()
-            if method not in ["GET", "POST", "PUT", "DELETE"]:
-                print("❌ Invalid method")
-                continue
+            method = input("📡 Method (GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS): ").strip().upper()
 
             payload = None
             expected_schema = None
             custom_headers = {}
 
-            if method in ["POST", "PUT"]:
+            if method in ["POST", "PUT", "PATCH"]:
                 body = input("📦 JSON payload (or leave blank): ").strip()
                 if body:
                     try:
                         payload = json.loads(body)
-                        define_schema = input("🎯 Define expected schema for payload? (y/n): ").strip().lower()
+                        define_schema = input("🧩 Define expected schema for payload? (y/n): ").strip().lower()
                         if define_schema == "y":
                             expected_schema = {}
                             for key in payload.keys():
-                                dtype = input(f"🔡 Expected type for '{key}' (str/int/float/bool): ").strip().lower()
+                                dtype = input(f"🔍 Expected type for '{key}' (str/int/float/bool): ").strip().lower()
                                 expected_schema[key] = {
                                     "str": str, "int": int, "float": float, "bool": bool
                                 }.get(dtype, str)
@@ -233,7 +234,7 @@ if __name__ == "__main__":
                         print(f"❌ Invalid JSON: {e}")
                         continue
 
-            has_headers = input("🧾 Add custom headers? (y/n): ").strip().lower()
+            has_headers = input("📥 Add custom headers? (y/n): ").strip().lower()
             if has_headers == 'y':
                 while True:
                     header_key = input("Header key (or leave blank to finish): ").strip()
@@ -247,10 +248,10 @@ if __name__ == "__main__":
         report = ReportGenerator()
 
         for url, method, payload, expected_schema, custom_headers in endpoints:
-            print(f"\n⏳ Testing {method} {url}")
+            print(f"\n🚀 Testing {method} {url}")
             validate_response(url, method, report, payload, expected_schema, custom_headers)
 
         report.generate_html()
 
     except KeyboardInterrupt:
-        print("\nInterrupted by user")
+        print("\n❗ Interrupted by user")
