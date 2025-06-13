@@ -14,12 +14,18 @@ RUN apt-get update && \
     ca-certificates \
     libssl-dev \
     file \
+    tzdata \
     && pip install --no-cache-dir \
     requests \
     jsonschema \
     genson \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    pytz \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set timezone
+ENV TZ=Asia/Kolkata
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Download ttyd (web terminal) binary
 RUN wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 && \
@@ -33,14 +39,15 @@ RUN addgroup --system appgroup && \
 # Set work directory
 WORKDIR /app
 
-# Copy files and set ownership
+# Copy Python script and set ownership
 COPY --chown=appuser:appgroup report.py /app/
 
-# Optionally create placeholder file
+# Optional placeholder file
 RUN echo "# Ready to run your Python API validator script" > validator.py
 
 # Change to non-root user
-USER appuser 
+USER appuser
+
 # Expose port for ttyd
 EXPOSE 8080
 
