@@ -3,9 +3,10 @@ import json
 import time
 import os
 from jsonschema import Draft7Validator, SchemaError, ValidationError
+from genson import SchemaBuilder
 from datetime import datetime
 
-REPORT_PATH = "expected_schema_report.html"
+REPORT_PATH = "reports.html"
 
 class Report:
     def __init__(self):
@@ -13,7 +14,7 @@ class Report:
 
     def add_entry(self, url, method, status_code, response_time, schema_valid, issues):
         self.entries.append({
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "method": method,
             "url": url,
             "status": status_code,
@@ -30,11 +31,12 @@ class Report:
 <head>
     <title>Expected Schema API Validation Report</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f9f9f9; }
         h1 { color: #2c3e50; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         th { background-color: #f0f0f0; }
+        tr:nth-child(even) { background-color: #fafafa; }
         .pass { color: green; font-weight: bold; }
         .fail { color: red; font-weight: bold; }
         .gray { color: gray; }
@@ -55,7 +57,7 @@ class Report:
 """)
             for e in self.entries:
                 schema_status = '<span class="pass">Passed</span>' if e['schema_valid'] else '<span class="fail">Failed</span>'
-                issues_str = "<br>".join(e['issues']) if e['issues'] else "None"
+                issues_str = "<ul>" + "".join(f"<li>{issue}</li>" for issue in e['issues']) + "</ul>" if e['issues'] else "None"
                 f.write(f"""
         <tr>
             <td>{e['timestamp']}</td>
@@ -72,6 +74,7 @@ class Report:
 </html>
 """)
         print(f"\n📄 Report saved to: {REPORT_PATH}")
+
 
 def validate_response(url, method, user_schema, report, payload=None, custom_headers=None):
     headers = {
@@ -117,6 +120,13 @@ def validate_response(url, method, user_schema, report, payload=None, custom_hea
             issues.append("❌ Failed to parse response JSON.")
             report.add_entry(url, method, response.status_code, elapsed_time, False, issues)
             return
+
+        # Auto-convert user example to schema if list/object
+        if isinstance(user_schema, list) or isinstance(user_schema, dict):
+            print("🧠 Detected example JSON. Auto-generating schema...")
+            builder = SchemaBuilder()
+            builder.add_object(user_schema)
+            user_schema = builder.to_schema()
 
         # Schema validation
         try:
@@ -171,7 +181,7 @@ if __name__ == "__main__":
             v = input("Header value: ").strip()
             custom_headers[k] = v
 
-    print("\n📄 Paste your expected JSON schema below. Press Enter twice to finish:")
+    print("\n📄 Paste your expected JSON schema or example response below. Press Enter twice to finish:")
     schema_lines = []
     while True:
         line = input()
@@ -182,7 +192,7 @@ if __name__ == "__main__":
     try:
         user_schema = json.loads("\n".join(schema_lines))
     except json.JSONDecodeError as e:
-        print("❌ Invalid schema:")
+        print("❌ Invalid JSON:")
         print(str(e))
         exit(1)
 
