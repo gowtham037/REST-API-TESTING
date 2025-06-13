@@ -7,6 +7,7 @@ from jsonschema import validate, ValidationError, SchemaError
 import os
 from http import HTTPStatus
 import hashlib
+import pytz
 
 SCHEMA_DIR = "schemas"
 os.makedirs(SCHEMA_DIR, exist_ok=True)
@@ -42,26 +43,30 @@ class ReportGenerator:
 
     def generate_html(self, filename="reports.html"):
         file_path = os.path.join(os.getcwd(), filename)
+        local_tz = pytz.timezone("Asia/Kolkata")
+        local_time_str = datetime.datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+
         with open(file_path, "w") as f:
-            f.write("""
+            f.write(f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-    <meta charset="UTF-8">
+    <meta charset=\"UTF-8\">
     <title>API Testing Report</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        h1 { color: #2c3e50; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-        th { background-color: #f0f0f0; } 
-        .pass { color: green; font-weight: bold; }
-        .fail { color: red; font-weight: bold; }
-        .skip { color: gray; font-weight: bold; }
+        body {{ font-family: Arial, sans-serif; padding: 20px; }}
+        h1 {{ color: #2c3e50; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+        th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
+        th {{ background-color: #f0f0f0; }} 
+        .pass {{ color: green; font-weight: bold; }}
+        .fail {{ color: red; font-weight: bold; }}
+        .skip {{ color: gray; font-weight: bold; }}
     </style>
 </head>
 <body>
     <h1>API Testing Report</h1>
+    <p>Generated on: {local_time_str}</p>
     <table>
         <tr>
             <th>Method</th>
@@ -96,7 +101,7 @@ class ReportGenerator:
             <td>{entry['response_time']:.3f}</td>
             <td>{schema_status}</td>
             <td>{issues_str}</td>
-            <td class="{final_class}">{final_result}</td>
+            <td class=\"{final_class}\">{final_result}</td>
         </tr>""")
             f.write("""
     </table>
@@ -210,10 +215,10 @@ if __name__ == "__main__":
         endpoints = []
 
         for i in range(num):
-            url = input(f"🌐 URL #{i + 1}: ").strip()
+            url = input(f" URL #{i + 1}: ").strip()
             method = input("📡 Method (GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS): ").strip().upper()
 
-            payload = None
+            payload = None 
             expected_schema = None
             custom_headers = {}
 
