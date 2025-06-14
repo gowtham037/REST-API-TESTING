@@ -32,24 +32,32 @@ RUN wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/downloa
     chmod +x /usr/local/bin/ttyd && \
     file /usr/local/bin/ttyd
 
-# Create non-root user and group
+# Create non-root user and group with home directory and bash shell
 RUN addgroup --system appgroup && \
-    adduser --system --ingroup appgroup appuser
+    adduser --system --ingroup appgroup --home /home/appuser --shell /bin/bash appuser && \
+    mkdir -p /home/appuser && \
+    chown appuser:appgroup /home/appuser
 
-# Set work directory
+# Set custom prompt
+RUN echo 'export PS1="Rest_API_Testing@\\h:\\w\\$ "' >> /home/appuser/.bashrc && \
+    chown appuser:appgroup /home/appuser/.bashrc
+
+# Set working directory
 WORKDIR /app
 
-# Copy Python script and set ownership
+# Copy Python scripts and assign ownership
 COPY --chown=appuser:appgroup report.py /app/
+COPY --chown=appuser:appgroup validate_api.py /app/
+COPY --chown=appuser:appgroup ai.py /app/
 
 # Optional placeholder file
 RUN echo "# Ready to run your Python API validator script" > validator.py
 
-# Change to non-root user
+# Use non-root user
 USER appuser
 
-# Expose port for ttyd
+# Expose ttyd port
 EXPOSE 8080
 
-# Default command: Launch ttyd on port 8080 serving bash
-CMD ["ttyd","-W", "--port", "8080", "bash"]
+# Start ttyd bash shell with custom prompt
+CMD ["ttyd", "-W", "--port", "8080", "bash"]
