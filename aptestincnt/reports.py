@@ -28,8 +28,8 @@ class ReportGenerator:
 
         all_passed = all(
             200 <= e["status_code"] < 300 and
-            e["schema_valid"] and
-            not e["issues"] and
+            (e["schema_valid"] or "Non-JSON" in "".join(e["issues"])) and
+            not any("Unexpected" in i or "Invalid" in i for i in e["issues"]) and
             e["response_time"] <= 2
             for e in self.entries
         )
@@ -65,7 +65,7 @@ function toggle(id, btn, label) {{
 <h3 class="{result_class}">Final Result: {final_result}</h3>
 """)
             for i, e in enumerate(self.entries):
-                schema_html = '<span class="pass">Passed</span>' if e["schema_valid"] else '<span class="fail">Failed</span>'
+                schema_html = '<span class="pass">Passed</span>' if e["schema_valid"] else '<span class="fail">Skipped</span>'
                 status_html = (
                     f"<span class='pass'>{e['status_code']}</span>"
                     if 200 <= e["status_code"] < 300
@@ -73,7 +73,8 @@ function toggle(id, btn, label) {{
                 )
                 issues_str = "<br>".join(e["issues"]) or "None"
                 schema_str = json.dumps(e.get("schema", {}), indent=2, ensure_ascii=False)
-                response_str = json.dumps(e.get("response", {}), indent=2, ensure_ascii=False)
+                response_content = e.get("response", {})
+                response_str = json.dumps(response_content, indent=2, ensure_ascii=False) if isinstance(response_content, (dict, list)) else str(response_content)
 
                 f.write(f"""
 <div class="card">
@@ -91,9 +92,9 @@ function toggle(id, btn, label) {{
         print(f"✅ Final Validation Status: {final_result}")
 
 def smart_predict_method(url):
-    methods = ["POST", "PUT", "PATCH", "GET", "DELETE", "OPTIONS", "HEAD"]
+    methods = ["POST", "PUT", "PATCH", "GET", "DELETE"]
     headers = {
-        "Accept": "application/json",
+        "Accept": "*/*",
         "Content-Type": "application/json"
     }
     dummy_payload = {"test": "value"}
@@ -123,60 +124,59 @@ def auto_validate(url, report):
     user_payload = None
     if method in ["POST", "PUT", "PATCH"]:
         try:
-            user_input = input(f"📝 Enter JSON payload for {method} request (or press Enter to use dummy): ").strip()
+            user_input = input(f"📝 Enter JSON payload for {method} request (or press Enter if no payload): ").strip()
             if user_input:
                 user_payload = json.loads(user_input)
-            else:
-                user_payload = {"test": "value"}
+                headers = {
+                    "Accept": "*/*",
+                    "Content-Type": "application/json"
+                }
+                response = requests.request(method, url, headers=headers, json=user_payload, timeout=10)
+                response_time = response.elapsed.total_seconds()
         except json.JSONDecodeError:
-            print("❌ Invalid JSON. Using dummy payload.")
-            user_payload = {"test": "value"}
-
-        try:
-            headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/json"
-            }
-            response = requests.request(method, url, headers=headers, json=user_payload, timeout=10)
-            response_time = response.elapsed.total_seconds()
+            issues.append("Invalid JSON payload.")
+            report.add_entry(url, method, 0, False, issues, 0)
+            return
         except requests.exceptions.RequestException as e:
             report.add_entry(url, method, 0, False, [str(e)], 0)
             return
 
     status = response.status_code
+    content_type = response.headers.get("Content-Type", "").lower()
     schema_valid = False
     schema = {}
-    json_data = {}
+    response_text = response.text
+    response_data = None
 
     if not (200 <= status < 300):
-        issues.append(f"Unexpected status code: {status} {HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else ''}")
+        phrase = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else ""
+        issues.append(f"Unexpected status code: {status} {phrase}")
 
-    content_type = response.headers.get("Content-Type", "").lower()
-    if "application/json" not in content_type:
-        issues.append(f"Invalid content-type: {content_type}")
-
-    try:
-        data = response.json()
-        json_data = data
-        builder = SchemaBuilder()
-        builder.add_object(data)
-        schema = builder.to_schema()
-
+    if "application/json" in content_type:
         try:
-            validate(instance=data, schema=schema)
-            schema_valid = True
-        except (ValidationError, SchemaError) as ve:
-            issues.append(f"Schema validation failed: {ve.message}")
-    except json.JSONDecodeError:
-        issues.append("Response is not valid JSON")
+            response_data = response.json()
+            builder = SchemaBuilder()
+            builder.add_object(response_data)
+            schema = builder.to_schema()
+
+            try:
+                validate(instance=response_data, schema=schema)
+                schema_valid = True
+            except (ValidationError, SchemaError) as ve:
+                issues.append(f"Schema validation failed: {ve.message}")
+        except json.JSONDecodeError:
+            issues.append("Invalid JSON in response.")
+    else:
+        response_data = response_text
+        issues.append(f"Non-JSON response with content-type: {content_type}. Skipping schema validation.")
 
     if response_time > 2:
         issues.append(f"Response time too long: {response_time:.3f}s")
 
-    report.add_entry(url, method, status, schema_valid, issues, response_time, schema, json_data)
+    report.add_entry(url, method, status, schema_valid, issues, response_time, schema, response_data)
 
 if __name__ == "__main__":
-    print("🔍 Smart API Validator with Method + Payload Prompt")
+    print("🔍 Smart API Validator (All Content Types)")
     try:
         url = input("Enter API URL: ").strip()
         if not url.startswith("http"):
@@ -186,4 +186,4 @@ if __name__ == "__main__":
         auto_validate(url, report)
         report.generate_html()
     except KeyboardInterrupt:
-        print("\n❗ Aborted by user.") 
+        print("\n❗ Aborted by user.")
