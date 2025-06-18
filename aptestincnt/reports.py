@@ -94,7 +94,7 @@ function toggle(id, btn, label) {{
 def smart_predict_method(url):
     methods = ["POST", "PUT", "PATCH", "GET", "DELETE"]
     headers = {
-        "Accept": "*/*",
+        "Accept": "/",
         "Content-Type": "application/json"
     }
     dummy_payload = {"test": "value"}
@@ -128,7 +128,7 @@ def auto_validate(url, report):
             if user_input:
                 user_payload = json.loads(user_input)
                 headers = {
-                    "Accept": "*/*",
+                    "Accept": "/",
                     "Content-Type": "application/json"
                 }
                 response = requests.request(method, url, headers=headers, json=user_payload, timeout=10)
